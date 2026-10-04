@@ -1,0 +1,11 @@
+[package]
+name = "mql"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+itertools = "0.15.0"
+metaflac = "0.2.8"
+anyhow = "1.0.104"
+glob = "0.3.4"
