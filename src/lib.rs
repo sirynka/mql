@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
+
 use itertools::Itertools;
+
 
 type Tags = metaflac::block::VorbisComment;
 // type Tags = HashMap<String, Vec<String>>;
@@ -17,7 +19,13 @@ pub struct Song {
     pub tags: Option<Tags>,
 }
 
-fn read_song_lyrics(flac_path: &Path) -> Option<Lyrics> {
+impl Song {
+    pub fn name(&self) -> Option<&str> {
+        self.path.file_stem().and_then(|s| s.to_str())
+    }
+}
+
+pub fn read_song_lyrics(flac_path: &Path) -> Option<Lyrics> {
     let lrc_path = flac_path.with_extension("lrc");
     let nlrc_path = flac_path.with_extension("nlrc");
 
@@ -47,10 +55,11 @@ fn read_song_lyrics(flac_path: &Path) -> Option<Lyrics> {
     None
 }
 
-fn read_song_from_glob(path: glob::GlobResult) -> anyhow::Result<Song> {
+pub fn read_song_from_glob(path: glob::GlobResult) -> anyhow::Result<Song> {
     let flac_path = path?;
     let tags = metaflac::Tag::read_from_path(&flac_path)?
-        .vorbis_comments().cloned();
+        .vorbis_comments()
+        .cloned();
 
     Ok(Song {
         lyrics: read_song_lyrics(&flac_path),
@@ -60,18 +69,18 @@ fn read_song_from_glob(path: glob::GlobResult) -> anyhow::Result<Song> {
 }
 
 // (Vec<Song>, Vec<Err>) - ?
-fn read_songs_in_dir(dir: &str) -> anyhow::Result<Vec<anyhow::Result<Song>>> {
+pub fn read_songs_in_dir(dir: &str) -> anyhow::Result<Vec<anyhow::Result<Song>>> {
     let flac_path = std::path::Path::new(dir).join("*.flac");
-    let flac_glob = flac_path.to_str().ok_or(anyhow::anyhow!("to_str({dir}/*.flac) is fucked"))?;
+    let flac_glob = flac_path
+        .to_str()
+        .ok_or(anyhow::anyhow!("to_str({dir}/*.flac) is fucked"))?;
     let flac_list = glob::glob(flac_glob)?;
     Ok(flac_list.map(read_song_from_glob).collect_vec())
 }
 
-fn main() -> anyhow::Result<()> {
-    let songs = read_songs_in_dir("/home/sirynka/Music/Liked/")?;
-
-    let s = &songs[0].as_ref().unwrap().tags;
-    println!("{s:#?}");
-
-    Ok(())
+pub fn songs_to_ok_err(songs: Vec<anyhow::Result<Song>>) -> (Vec<Song>, Vec<anyhow::Error>) {
+    let (ok, err): (Vec<_>, Vec<_>) = songs.into_iter().partition(Result::is_ok);
+    let ok = ok.into_iter().map(Result::unwrap).collect_vec();
+    let err = err.into_iter().map(Result::unwrap_err).collect_vec();
+    (ok, err)
 }

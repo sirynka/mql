@@ -5,7 +5,11 @@ edition = "2024"
 
 [dependencies]
 
-itertools = "0.15.0"
 metaflac = "0.2.8"
+# deunicode = "1.6.2"
+
+thiserror = "2.0.21"
 anyhow = "1.0.104"
+
+itertools = "0.15.0"
 glob = "0.3.4"
