@@ -78,7 +78,7 @@ pub fn read_songs_in_dir(dir: &str) -> anyhow::Result<Vec<anyhow::Result<Song>>>
     Ok(flac_list.map(read_song_from_glob).collect_vec())
 }
 
-pub fn songs_to_ok_err(songs: Vec<anyhow::Result<Song>>) -> (Vec<Song>, Vec<anyhow::Error>) {
+pub fn anyhow_songs_to_ok_err(songs: Vec<anyhow::Result<Song>>) -> (Vec<Song>, Vec<anyhow::Error>) {
     let (ok, err): (Vec<_>, Vec<_>) = songs.into_iter().partition(Result::is_ok);
     let ok = ok.into_iter().map(Result::unwrap).collect_vec();
     let err = err.into_iter().map(Result::unwrap_err).collect_vec();

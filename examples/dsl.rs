@@ -1,9 +1,9 @@
+use std::io::{Write, stderr};
 #[allow(unused)]
 use std::{borrow::Cow, fmt::Display, ops::Range, process::exit};
-use anyhow::anyhow;
 use thiserror::Error;
 use itertools::Itertools;
-use mql::{Song, read_songs_in_dir, songs_to_ok_err};
+use mql::{Song, read_songs_in_dir, anyhow_songs_to_ok_err};
 
 #[derive(Debug, PartialEq)]
 enum TokenType<'q> {
@@ -47,7 +47,7 @@ impl Display for Error<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let spaces = " ".repeat(self.range.start);
         let arrows = "^".repeat(self.range.len());
-        writeln!(f, "Error\n")?;
+        writeln!(f)?;
         writeln!(f, "'{}'", self.query)?;
         writeln!(f, " {spaces}{arrows}")?;
         writeln!(f, " {spaces}{}", self.reason)?;
@@ -169,9 +169,9 @@ impl<'q> Node<'q> {
         }
     }
 
-    fn u32(&self, song: &Song) -> u32 {
+    fn u32(&self, q: &'q str, toks: &[Token<'q>], song: &Song) -> Result<u32, Error<'q>> {
         use node::*;
-        match &self.ty {
+        Ok(match &self.ty {
             NodeType::Number(n) => *n,
             NodeType::BinOp { op, lhs_and_rhs } => {
                 let (lhs, rhs) = lhs_and_rhs.as_ref();
@@ -179,20 +179,20 @@ impl<'q> Node<'q> {
                     (&".", Some(tags), lit!(key), lit!("len")) =>
                         match tags.get(&key.to_uppercase()) {
                             Some(tags) => tags.len() as u32,
-                            None => panic!("this should be an error"),
+                            None => Err(Error::from_toks(q, &toks[self.parsed.start..self.parsed.end], format!("tag does not exist in {:?}", song.name().unwrap())))?,
                         }
 
                     (op, _, lhs, rhs) => unimplemented!("{lhs} \x1b[41m{op}\x1b[0m {rhs}"),
                 }
             },
             t => unimplemented!("{t:#?}"),
-        }
+        })
     }
 
-    fn bool(&self, song: &Song) -> bool {
+    fn bool(&self, q: &'q str, toks: &[Token<'q>], song: &Song) -> Result<bool, Error<'q>> {
         use node::*;
 
-        match &self.ty {
+        Ok(match &self.ty {
             NodeType::Bool(b) => *b,
             NodeType::BinOp { op, lhs_and_rhs } => {
                 let (lhs, rhs) = lhs_and_rhs.as_ref();
@@ -204,15 +204,15 @@ impl<'q> Node<'q> {
                             None => false,
                         },
 
-                    (&"&&", _, binop!(), binop!()) => lhs.bool(song) && rhs.bool(song),
-                    (&"||", _, binop!(), binop!()) => lhs.bool(song) || rhs.bool(song),
-                    (&">", _, binop!(), number!()) => lhs.u32(song) > rhs.u32(song),
+                    (&"&&", _, binop!(), binop!()) => lhs.bool(q, toks, song)? && rhs.bool(q, toks, song)?,
+                    (&"||", _, binop!(), binop!()) => lhs.bool(q, toks, song)? || rhs.bool(q, toks, song)?,
+                    (&">", _, binop!(), number!()) => lhs.u32(q, toks, song)? > rhs.u32(q, toks, song)?,
 
                     (op, _, lhs, rhs) => unimplemented!("{lhs} \x1b[41m{op}\x1b[0m {rhs}"),
                 }
             },
             t => unimplemented!("{t:#?}"),
-        }
+        })
     }
 }
 
@@ -241,6 +241,7 @@ fn validate_parens<'t, 'q: 't>(query: &'q str, toks: &'t [Token<'q>]) -> Result<
     }
 }
 
+#[allow(unused)]
 fn skip_paren_group(toks: &[Token], range: Range<usize>) -> usize {
     let mut n = 1;
     let mut i = range.start;
@@ -322,17 +323,24 @@ fn parse<'t, 'q: 't>(q: &'q str, toks: &'t [Token<'q>]) -> Result<Node<'q>, Erro
     parse_impl(q, toks, 0..toks.len())
 }
 
-fn eval_filter<'s>(songs: &'s [Song], ast: Node<'_>) -> Vec<&'s Song> {
+// Error<'q> is not quite true for eval error
+// It should be shorter of ('s, 'q)
+fn try_filter<'s, 'q, 't>(songs: &'s [Song], query: &'q str, toks: &'t [Token<'q>], ast: Node<'q>) -> Vec<Result<&'s Song, Error<'q>>> {
     songs
         .iter()
-        .filter(|s| ast.bool(s))
+        .filter_map(|s| match ast.bool(query, toks, s) {
+            Ok(true) => Some(Ok(s)),
+            Err(e) => Some(Err(e)),
+            Ok(false) => None,
+        })
         .collect_vec()
 }
 
-fn filter<'s, 'q>(songs: &'s [Song], q: &'q str) -> Result<Vec<&'s Song>, Error<'q>> {
-    let toks = tokenize(q)?;
-    let ast = parse(q, &toks)?;
-    Ok(eval_filter(&songs, ast))
+fn filtered_songs_to_ok_err<'s, 'q>(songs: Vec<Result<&'s Song, Error<'q>>>) -> (Vec<&'s Song>, Vec<Error<'q>>) {
+    let (ok, err): (Vec<_>, Vec<_>) = songs.into_iter().partition(Result::is_ok);
+    let ok = ok.into_iter().map(Result::unwrap).collect_vec();
+    let err = err.into_iter().map(Result::unwrap_err).collect_vec();
+    (ok, err)
 }
 
 impl std::fmt::Display for Node<'_> {
@@ -348,30 +356,38 @@ impl std::fmt::Display for Node<'_> {
 }
 
 fn main() -> anyhow::Result<()> {
-
     let songs = read_songs_in_dir("/home/sirynka/Music/Liked/")?;
-    let (songs, _) = songs_to_ok_err(songs);
+    let (songs, _) = anyhow_songs_to_ok_err(songs);
 
     let q = "artist == eminem && artist.len > 1";
-    let songs = filter(&songs, q).map_err(|e| anyhow!("{e}"))?;
+    let toks = tokenize(q)?;
+    let ast = parse(q, &toks)?;
+    let songs = try_filter(&songs, q, &toks, ast);
+    let (songs, errors) = filtered_songs_to_ok_err(songs);
 
-    for s in songs {
-        println!("{:?}", s.name());
+    if let Some(e) = errors.first() {
+        let spaces = " ".repeat(e.range.start);
+        let arrows = "^".repeat(e.range.len());
+        writeln!(stderr(), "'{}'", e.query)?;
+        writeln!(stderr(), " {spaces}{arrows}")?;
+        writeln!(stderr(), " {spaces}{}", e.reason)?;
+        writeln!(stderr(), " {spaces}and {} other songs", errors.len() - 1)?;
     }
 
+    for s in songs { println!("{:?}", s.name().unwrap()); }
     Ok(())
 }
 
-// Some("Akon - Smack That")
-// Some("Dr. Dre - I Need A Doctor")
-// Some("Ed Sheeran - Remember The Name (feat. Eminem & 50 Cent)")
-// Some("Eminem - Beautiful Pain")
-// Some("Eminem - Black Magic")
-// Some("Eminem - Love The Way You Lie")
-// Some("Eminem - Nowhere Fast")
-// Some("Eminem - Stan")
-// Some("Eminem - Superman")
-// Some("Eminem - The Monster")
-// Some("Eminem - Till I Collapse")
-// Some("Skylar Grey - C’mon Let Me Ride")
-// Some("Skylar Grey - Last One Standing (From Venom_ Let There Be Carnage)")
+// "Akon - Smack That"
+// "Dr. Dre - I Need A Doctor"
+// "Ed Sheeran - Remember The Name (feat. Eminem & 50 Cent)"
+// "Eminem - Beautiful Pain"
+// "Eminem - Black Magic"
+// "Eminem - Love The Way You Lie"
+// "Eminem - Nowhere Fast"
+// "Eminem - Stan"
+// "Eminem - Superman"
+// "Eminem - The Monster"
+// "Eminem - Till I Collapse"
+// "Skylar Grey - C’mon Let Me Ride"
+// "Skylar Grey - Last One Standing (From Venom_ Let There Be Carnage)"
