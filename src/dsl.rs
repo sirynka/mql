@@ -62,31 +62,43 @@ const CMP_SET_OPS: &[&str] = &["==", "is", "!=", "is not"];
 const BOOL_UNOPS: &[&str] = &["!", "not"];
 const BOOL_BINOPS: &[&str] = &["||", "or", "&&", "and"];
 
-enum OpType {
-    Bool(&'static str),
-    Num(&'static str),
-    Set(&'static str),
+const TAG_FIELDS_OF_NUM_TYPE: &[&str] = &["len"];
+
+// Location
+pub struct Loc<Expr> {
+    expr: Expr,
+    at: Range<usize>,
 }
 
-enum NodeType {
+pub struct Val<'q> {
+    str: &'q str,
+    quoted: bool,
+}
+
+pub enum Expr<'q> {
     BinOp {
-        ty: OpType,
-        lhs_and_rhs: Box<(Node, Node)>,
+        op: &'q str, // BOOL_BINOPS
+        lhs_and_rhs: Box<(Loc<Expr<'q>>, Loc<Expr<'q>>)>,
     },
     UnOp {
-        // ty: Bool
-        expr: Box<Node>,
+        op: &'q str, // BOOL_UNOPS
+        expr: Box<Loc<Expr<'q>>>,
+    },
+    Set {
+        tag: Loc<&'q str>,
+        op: Loc<&'q str>, // CMP_SET_OPS
+        val: Loc<Val<'q>>,
+    },
+    Num {
+        tag: Loc<&'q str>,
+        member: Loc<&'q str>, // TAG_FIELDS_OF_NUM_TYPE
+        op: Loc<&'q str>,     // CMP_NUM_OPS
+        num: Loc<Num>,
     },
     Bool(bool),
 }
 
-pub struct Node {
-    ty: NodeType,
-    parsed: Range<usize>,
-}
-
 fn tokenize<'q>(q: &'q str) -> Result<Vec<Token<'q>>, MqlError<'q>> {
-    // Sirynka: Stupid language, can't create a comptime set
     let bin_ops = [BOOL_BINOPS, CMP_SET_OPS, CMP_NUM_OPS, &["."]]
         .iter().copied().flatten().collect_vec();
 
@@ -154,13 +166,13 @@ fn tokenize<'q>(q: &'q str) -> Result<Vec<Token<'q>>, MqlError<'q>> {
     Ok(toks)
 }
 
-fn parse<'q, 't>(q: &'q str, toks: &'t [Token<'q>]) -> Result<Node, MqlError<'q>> {
+fn parse<'q, 't>(q: &'q str, toks: &'t [Token<'q>]) -> Result<Loc<Expr<'q>>, MqlError<'q>> {
     unimplemented!()
 }
 
 pub struct MQL;
 impl<'q, 't> MQL {
-    pub fn parse(q: &'q str) -> Result<Node, MqlError<'q>> {
+    pub fn parse(q: &'q str) -> Result<Loc<Expr<'q>>, MqlError<'q>> {
         let toks = tokenize(q)?;
         let ast = parse(q, &toks)?;
         Ok(ast)

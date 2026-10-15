@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
 
-use crate::dsl::{MqlError, Node};
+use crate::dsl::{Expr, MqlError, Loc};
 
 type Tags = metaflac::block::VorbisComment;
 // type Tags = HashMap<String, Vec<String>>;
@@ -29,11 +29,11 @@ impl Song {
 pub struct Songs(pub Vec<Song>);
 
 impl<'s, 'q> Songs {
-    pub fn validate(self, ast: &'q Node) -> (Self, Vec<MqlError<'q>>) {
+    pub fn validate(self, ast: &'q Loc<Expr<'q>>) -> (Self, Vec<MqlError<'q>>) {
         unimplemented!()
     }
 
-    pub fn filter(self, ast: &'q Node) -> Self {
+    pub fn filter(self, ast: &'q Loc<Expr<'q>>) -> Self {
         unimplemented!()
     }
 }
