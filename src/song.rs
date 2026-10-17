@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
 
-use crate::dsl::{Expr, MqlError, Loc};
+use crate::dsl::{Expr, Loc, eval};
 
 type Tags = metaflac::block::VorbisComment;
 // type Tags = HashMap<String, Vec<String>>;
@@ -24,17 +24,25 @@ impl Song {
     pub fn name(&self) -> Option<&str> {
         self.path.file_stem().and_then(|s| s.to_str())
     }
+
+    // Claude: vorbis tag names are case-insensitive ASCII, a missing tag (or no tags at all) yields nothing
+    pub fn tag(&self, name: &str) -> impl Iterator<Item = &str> {
+        self.tags.iter()
+            .flat_map(|tags| tags.comments.iter())
+            .filter(move |(key, _)| key.eq_ignore_ascii_case(name))
+            .flat_map(|(_, values)| values.iter().map(String::as_str))
+    }
+
+    pub fn matches(&self, q: &Loc<Expr>) -> bool {
+        eval(q, self)
+    }
 }
 
 pub struct Songs(pub Vec<Song>);
 
 impl<'s, 'q> Songs {
-    pub fn validate(self, ast: &'q Loc<Expr<'q>>) -> (Self, Vec<MqlError<'q>>) {
-        unimplemented!()
-    }
-
     pub fn filter(self, ast: &'q Loc<Expr<'q>>) -> Self {
-        unimplemented!()
+        Songs(self.0.into_iter().filter(|s| s.matches(ast)).collect())
     }
 }
 
