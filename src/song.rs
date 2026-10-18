@@ -1,8 +1,7 @@
 use std::path::{Path, PathBuf};
+use itertools::{Either, Itertools};
 
-use itertools::Itertools;
-
-use crate::dsl::{self, Expr, Loc};
+use crate::mql::{self, Expr, Loc};
 
 type Tags = metaflac::block::VorbisComment;
 // type Tags = HashMap<String, Vec<String>>;
@@ -11,6 +10,15 @@ type Tags = metaflac::block::VorbisComment;
 pub enum Lyrics {
     Synced(Vec<(String, String)>), // .lrc
     Unsynced(Vec<String>),         // .nlrc
+}
+
+impl Lyrics {
+    pub fn lines(&self) -> impl Iterator<Item = &str> {
+        match self {
+            Lyrics::Synced(lines) => Either::Left(lines.iter().map(|(_time, text)| text.as_str())),
+            Lyrics::Unsynced(lines) => Either::Right(lines.iter().map(String::as_str)),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -26,15 +34,26 @@ impl Song {
     }
 
     // Claude: vorbis tag names are case-insensitive ASCII, a missing tag (or no tags at all) yields nothing
+    // Claude: Todo: `lyrics` is an artificial tag here because only fields are typed, not tags. That makes it a list
+    // of lines, so `lyrics == '...'` is valid but useless and you have to write `lyrics.str contains ...`.
+    // Once tags have types, `lyrics` (and `year` / `release_date.year`) can move into eval as a string tag
+    // and `lyrics contains ...` would just work.
     pub fn tag(&self, name: &str) -> impl Iterator<Item = &str> {
-        self.tags.iter()
+
+        let tags = self.tags.iter()
             .flat_map(|tags| tags.comments.iter())
             .filter(move |(key, _)| key.eq_ignore_ascii_case(name))
-            .flat_map(|(_, values)| values.iter().map(String::as_str))
+            .flat_map(|(_, values)| values.iter().map(String::as_str));
+
+        let lyrics = self.lyrics.iter()
+            .filter(move |_| name.eq_ignore_ascii_case("lyrics"))
+            .flat_map(Lyrics::lines);
+
+        tags.chain(lyrics)
     }
 
     pub fn matches(&self, q: &Loc<Expr>) -> bool {
-        dsl::eval(q, self)
+        mql::eval(q, self)
     }
 }
 
