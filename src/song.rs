@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use itertools::Itertools;
 
-use crate::dsl::{Expr, Loc, eval};
+use crate::dsl::{self, Expr, Loc};
 
 type Tags = metaflac::block::VorbisComment;
 // type Tags = HashMap<String, Vec<String>>;
@@ -34,7 +34,7 @@ impl Song {
     }
 
     pub fn matches(&self, q: &Loc<Expr>) -> bool {
-        eval(q, self)
+        dsl::eval(q, self)
     }
 }
 

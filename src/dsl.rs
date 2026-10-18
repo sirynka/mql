@@ -37,15 +37,37 @@ impl<'q> MqlError<'q> {
 
 impl Display for MqlError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Claude: `ranges` are in bytes, the terminal column is in chars
-        let arrows: String = self.query.char_indices()
-            .map(|(i, _)| if self.ranges.iter().any(|r| r.contains(&i)) { '^' } else { ' ' })
-            .collect();
-        let spaces = " ".repeat(self.query[..self.ranges[0].start].chars().count());
+        // Claude: `ranges` are in bytes, the terminal column is in chars. `start` is the line's offset in the query.
+        // Claude: no carets under indentation, a range crossing lines (unclosed paren) would underline it
+        let carets_for = |start: usize, line: &str| -> String {
+            let text = line.len() - line.trim_start().len()..line.trim_end().len();
+            let carets: String = line.char_indices()
+                .map(|(i, _)| if text.contains(&i) && self.ranges.iter().any(|r| r.contains(&(start + i))) { '^' } else { ' ' })
+                .collect();
+            carets.trim_end().to_string()
+        };
+        let indent = |carets: &str| " ".repeat(carets.len() - carets.trim_start().len());
+
         writeln!(f)?;
-        writeln!(f, "'{}'", self.query)?;
-        writeln!(f, " {}", arrows.trim_end())?;
-        writeln!(f, " {spaces}{}", self.reason)?;
+        if !self.query.contains('\n') {
+            let carets = carets_for(0, self.query);
+            writeln!(f, "'{}'", self.query)?;
+            writeln!(f, " {carets}")?;
+            writeln!(f, " {}{}", indent(&carets), self.reason)?;
+            return Ok(());
+        }
+
+        let mut offset = 0;
+        let lines = self.query.split('\n').map(|line| { let start = offset; offset += line.len() + 1; (start, line) }).collect_vec();
+        let last = lines.iter().rposition(|&(start, line)| !carets_for(start, line).is_empty()).unwrap_or(0);
+        let w = lines.len().to_string().len();
+
+        for (n, &(start, line)) in lines.iter().enumerate() {
+            writeln!(f, "{:>w$} | {line}", n + 1)?;
+            let carets = carets_for(start, line);
+            if !carets.is_empty() { writeln!(f, "{:w$} | {carets}", "")?; }
+            if n == last { writeln!(f, "{:w$} | {}{}", "", indent(&carets), self.reason)?; }
+        }
         Ok(())
     }
 }
@@ -693,6 +715,31 @@ fn tokenize_odd_quotes() {
         let w = q.chars().count();
         assert!(marks == expected, "\n{q}\n{expected:<w$} <- expected\n{marks:<w$} <- got\n");
     }
+}
+
+#[test]
+fn multiline_err() {
+    let err = |q: &'static str| Parser::parse(q, &tokenize(q).unwrap()).unwrap_err().to_string();
+
+    assert_eq!(err("artist == eminem\n  && genre.str contians rap"), [
+        "",
+        "1 | artist == eminem",
+        "2 |   && genre.str contians rap",
+        "  |                ^^^^^^^^^^^^",
+        &format!("  |                expected one of {:?}", [CMP_STR_OPS, CMP_SET_OPS].concat()),
+        "",
+    ].join("\n"));
+
+    assert_eq!(err("(a == b\n  || c == d\n"), [
+        "",
+        "1 | (a == b",
+        "  | ^^^^^^^",
+        "2 |   || c == d",
+        "  |   ^^^^^^^^^",
+        "  |   unclosed paren",
+        "3 | ",
+        "",
+    ].join("\n"));
 }
 
 #[test]

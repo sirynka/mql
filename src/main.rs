@@ -7,7 +7,11 @@ fn main() -> anyhow::Result<()> {
 
     // let q = MQL::parse("artist == eminem && artist.len > 1")?;
 
-    let q = MQL::parse(r#"mbz_tag.str contains 'hip hop' and mbz_tag.str does not contain rap"#)?;
+    let q = MQL::parse(r#"
+        mbz_tag.str contains hip hop
+        and
+        mbz_tag.str does not contain rap
+    "#)?;
 
     let Songs(songs) = songs.filter(&q);
     for s in songs { println!("{:?}", s.name().unwrap()); }
