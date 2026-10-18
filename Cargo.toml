@@ -14,3 +14,5 @@ anyhow = "1.0.104"
 
 itertools = "0.15.0"
 glob = "0.3.4"
+
+maud = "0.27.0" # html

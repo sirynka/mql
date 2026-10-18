@@ -4,3 +4,15 @@ body {
     background: rgb(50, 50, 50);
     color: rgb(220, 220, 220);
 }
+
+textarea {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 1rem;
+    resize: vertical;
+}
+
+.error {
+    color: rgb(240, 110, 110);
+}

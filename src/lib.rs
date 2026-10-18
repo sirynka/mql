@@ -1,2 +1,2 @@
 pub mod song;
-pub mod dsl;
+pub mod mql;

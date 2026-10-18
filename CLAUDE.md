@@ -11,9 +11,12 @@ Run tests as `cargo test --lib --no-run`, then `timeout 1 cargo test --lib` (a p
 ## Current goal: web UI demo (Friday)
 
 Scope until the demo is the web UI and polish, nothing else.
-- Server: `src/bin/server.rs` (`cargo run --bin server`; plain `cargo run` is the CLI via `default-run`).
-  Hand-written, single-threaded, explicit routes only (no path-to-file mapping). Pages live in `web-ui/` and
-  are read on every request. Library is read once at startup and kept in memory.
+- Server: `src/bin/server/` (`cargo run --bin server`; plain `cargo run` is the CLI via `default-run`).
+  `server.rs` is generic hand-written HTTP (read request, `respond`, URL decoding, LAN IP), no MQL in it.
+  `main.rs` is the app: startup, explicit routes only (no path-to-file mapping), `run_query`.
+  `render.rs` builds the data-driven HTML (song table, errors) with `maud`, which escapes everything in `( )`.
+  The static page lives in `web-ui/` (`index.html`, `style.css`, `main.js`), read on every request.
+  Class names are the contract between `render.rs` and `style.css`. Library is read once at startup.
 - Frontend: plain HTML, a little CSS (full-width textarea, `<hr>`, output below, red on error, table
   styling, monospace at least for errors), and ~10 lines of JS.
 - Live updates: on input, debounce 100 ms, `fetch` the query, server returns either the rendered error
@@ -87,6 +90,7 @@ Scope until the demo is the web UI and polish, nothing else.
 - An owned error type so `?` works into `anyhow` with non-'static queries.
 - Did-you-mean for ops (`does no contain` → `does not contain`), same edit-distance machinery as tag typos.
 - Word-based string ops (`has word rap`) if substring `contains` keeps matching `trap`.
+- Artificial tags resolved in eval (see the Todo above `eval`): `lyrics`, later `year` / `release_date.year`.
 
 ## Future ideas (after the demo, don't start without being asked)
 
